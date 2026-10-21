@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BudgetBuddy: Monthly Budget Planner</title>
+<style>
+:root{--bg:#FAFAF9;--fg:#18181B;--card:#fff;--line:#DEDDD8;--acc:#2A78D6}
+body.dark{--bg:#18181B;--fg:#FAFAF9;--card:#232328;--line:#3a3a40}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0}
+main{max-width:860px;margin:auto;padding:1rem}h1{color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem;margin:1rem 0}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem}.sum b{display:block;font-size:1.4rem}
+input,select,button{padding:.5rem;font-size:1rem;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.p{background:var(--acc);color:#fff;border:0}form{display:flex;flex-wrap:wrap;gap:.5rem}
+table{width:100%;border-collapse:collapse}td,th{padding:.4rem;border-bottom:1px solid var(--line);text-align:left}
+.bar{height:8px;background:var(--line);border-radius:4px}.bar i{display:block;height:100%;background:#008300;border-radius:4px}
+.over{color:#C0392B}.over .bar i{background:#C0392B}canvas{max-width:100%}
+</style></head><body><main>
+<h1>BudgetBuddy</h1>
+<div><button id="prev">&lsaquo;</button> <b id="month"></b> <button id="next">&rsaquo;</button>
+<select id="cur"><option>$</option><option>€</option><option>£</option><option>₪</option></select> <button id="theme">Dark mode</button></div>
+<section class="card sum"><div>Income<b><input id="inc" type="number" min="0" style="width:110px"></b></div><div>Budgeted<b id="tb"></b></div><div>Spent<b id="ts"></b></div><div>Left<b id="tl"></b></div></section>
+<section class="card"><h3>Categories</h3><form id="catf"><input id="cn" placeholder="Category" required><input id="cb" type="number" min="0" step="0.01" placeholder="Monthly budget" required><button class="p">Add</button></form><table id="cats"></table></section>
+<section class="card"><h3>Add spending</h3><form id="txf"><select id="tc"></select><input id="ta" type="number" min="0.01" step="0.01" placeholder="Amount" required><input id="tn" placeholder="Note"><input id="td" type="date" required><button class="p">Add</button></form><table id="txs"></table></section>
+<section class="card"><h3>Spending vs budget</h3><canvas id="chart" width="800" height="300"></canvas></section>
+<section class="card"><button id="copy">Copy last month's budget</button> <button id="exp">Export backup</button> <button onclick="imp.click()">Import backup</button><input id="imp" type="file" accept=".json" hidden></section>
+<p style="opacity:.6">Data stays in this browser. No account, no ads.</p></main>
+<script>
+const K='budgetbuddy-v1';let S=JSON.parse(localStorage.getItem(K)||'{"months":{},"cur":"$","dark":false}');
+const now=new Date();let M=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+const $=i=>document.getElementById(i),save=()=>localStorage.setItem(K,JSON.stringify(S));
+const mo=()=>S.months[M]??={income:0,cats:[],txs:[]},f=n=>S.cur+(+n).toFixed(2);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';');
+const add=(k,m=M)=>{let[y,n]=m.split('-').map(Number);n+=k;if(n<1){n=12;y--}if(n>12){n=1;y++}return y+'-'+String(n).padStart(2,'0')};
+const spent=c=>mo().txs.filter(t=>t.c===c).reduce((a,t)=>a+t.a,0);
+function render(){const m=mo();document.body.classList.toggle('dark',S.dark);$('cur').value=S.cur;
+$('month').textContent=new Date(M+'-01T00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+const tb=m.cats.reduce((a,c)=>a+c.b,0),ts=m.txs.reduce((a,t)=>a+t.a,0);
+$('tb').textContent=f(tb);$('ts').textContent=f(ts);$('tl').textContent=f(tb-ts);$('tl').className=tb<ts?'over':'';$('inc').value=m.income||'';
+$('cats').innerHTML=m.cats.map((c,i)=>{const s=spent(c.n),o=s>c.b,p=c.b?Math.min(100,s/c.b*100):100;
+return`<tr class="${o?'over':''}"><td>${esc(c.n)}<div class="bar"><i style="width:${p}%"></i></div></td><td><input type="number" value="${c.b}" style="width:90px" onchange="setB(${i},this.value)"></td><td>${f(s)} spent</td><td>${f(c.b-s)} left</td><td><button onclick="delC(${i})">✕</button></td></tr>`}).join('');
+$('tc').innerHTML=m.cats.map(c=>`<option>${esc(c.n)}</option>`).join('')||'<option value="">Add a category first</option>';
+$('txs').innerHTML=m.txs.map((t,i)=>[t,i]).sort((a,b)=>b[0].d.localeCompare(a[0].d)).map(([t,i])=>`<tr><td>${t.d}</td><td>${esc(t.c)}</td><td>${esc(t.n)}</td><td>${f(t.a)}</td><td><button onclick="delT(${i})">✕</button></td></tr>`).join('')||'<tr><td>No spending yet this month.</td></tr>';
+if(!$('td').value)$('td').value=new Date().toLocaleDateString('en-CA');draw()}
+function draw(){const c=$('chart'),x=c.getContext('2d'),cats=mo().cats,W=c.width,H=c.height,fg=getComputedStyle(document.body).getPropertyValue('--fg');
+x.clearRect(0,0,W,H);x.fillStyle=fg;x.font='13px system-ui';if(!cats.length)return x.fillText('Add categories to see the chart.',20,40);
+const mx=Math.max(1,...cats.map(c=>Math.max(c.b,spent(c.n)))),bw=(W-40)/cats.length;
+cats.forEach((c,i)=>{const X=30+i*bw,s=spent(c.n),h1=c.b/mx*(H-60),h2=s/mx*(H-60);
+x.fillStyle='#9a9a95';x.fillRect(X,H-30-h1,bw*.38,h1);x.fillStyle=s>c.b?'#C0392B':'#2A78D6';x.fillRect(X+bw*.4,H-30-h2,bw*.38,h2);x.fillStyle=fg;x.fillText(c.n.slice(0,12),X,H-12)});
+x.fillText('Gray = budget, blue = spent (red = over)',30,16)}
+window.setB=(i,v)=>{mo().cats[i].b=+v||0;save();render()};
+window.delC=i=>{if(!confirm('Delete this category and its spending?'))return;const n=mo().cats[i].n;mo().cats.splice(i,1);mo().txs=mo().txs.filter(t=>t.c!==n);save();render()};
+window.delT=i=>{mo().txs.splice(i,1);save();render()};
+$('catf').onsubmit=e=>{e.preventDefault();const n=$('cn').value.trim();if(mo().cats.some(c=>c.n===n))return alert('That category exists');mo().cats.push({n,b:+$('cb').value});e.target.reset();save();render()};
+$('txf').onsubmit=e=>{e.preventDefault();if(!$('tc').value)return;mo().txs.push({c:$('tc').value,a:+$('ta').value,n:$('tn').value,d:$('td').value});$('ta').value=$('tn').value='';save();render()};
+$('inc').onchange=e=>{mo().income=+e.target.value||0;save();render()};
+$('cur').onchange=e=>{S.cur=e.target.value;save();render()};
+$('theme').onclick=()=>{S.dark=!S.dark;save();render()};
+$('prev').onclick=()=>{M=add(-1);render()};$('next').onclick=()=>{M=add(1);render()};
+$('copy').onclick=()=>{const p=S.months[add(-1)];if(!p)return alert('No budget last month');mo().cats=p.cats.map(c=>({...c}));mo().income=p.income;save();render()};
+$('exp').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)]));a.download='budgetbuddy-backup.json';a.click()};
+$('imp').onchange=e=>{const r=new FileReader();r.onload=()=>{try{S=JSON.parse(r.result);save();render()}catch{alert('Not a valid backup')}};r.readAsText(e.target.files[0])};
+render();
+</script></body></html>
